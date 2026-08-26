@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SMS Center - 私人短信接码平台</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    .glass { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(12px); }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+  
+  <!-- Navigation / Header -->
+  <header class="sticky top-0 z-30 border-b border-slate-200 glass">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
+          <i data-lucide="message-square-code" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h1 class="font-bold text-lg leading-none text-slate-900">SMS Forwarder</h1>
+          <span class="text-xs font-medium text-emerald-600 flex items-center gap-1 mt-0.5">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> 服务运行中 (FastAPI + SQLite)
+          </span>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 sm:gap-3">
+        <!-- Token Manage Button -->
+        <button onclick="openTokenModal()" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition shadow-sm">
+          <i data-lucide="key" class="w-4 h-4 text-amber-500"></i>
+          <span>令牌管理</span>
+        </button>
+
+        <!-- Webhook Helper Button -->
+        <button onclick="openWebhookModal()" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition shadow-sm">
+          <i data-lucide="link" class="w-4 h-4 text-blue-500"></i>
+          <span class="hidden sm:inline">推送配置</span>
+        </button>
+
+        <!-- Clear All Button -->
+        <button onclick="confirmClearAll()" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg text-rose-600 bg-rose-50 hover:bg-rose-100 transition border border-rose-200/60">
+          <i data-lucide="trash-2" class="w-4 h-4"></i>
+          <span class="hidden sm:inline">清空记录</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    
+    <!-- Filter & Search Card -->
+    <div class="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-200/80 mb-6">
+      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">来源设备</label>
+          <select id="filterDevice" onchange="loadSms(1)" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="">全部设备</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">发送号码</label>
+          <input type="text" id="filterPhone" placeholder="搜索号码..." oninput="debounceLoad()" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">内容关键字</label>
+          <input type="text" id="filterQuery" placeholder="搜索短信内容..." oninput="debounceLoad()" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div class="flex items-end gap-2">
+          <button onclick="loadSms(1)" class="flex-1 inline-flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-xl text-sm transition shadow-sm shadow-blue-500/20">
+            <i data-lucide="refresh-cw" class="w-4 h-4" id="refreshIcon"></i>
+            <span>刷新</span>
+          </button>
+          <button onclick="resetFilters()" class="px-3 py-2 text-sm font-medium rounded-xl text-slate-500 bg-slate-100 hover:bg-slate-200 transition">
+            重置
+          </button>
+        </div>
+      </div>
+      
+      <!-- Auto Refresh Switch -->
+      <div class="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+        <div class="flex items-center gap-2">
+          <input type="checkbox" id="autoRefresh" checked class="w-3.5 h-3.5 text-blue-600 rounded border-slate-300 focus:ring-blue-500">
+          <label for="autoRefresh" class="cursor-pointer select-none">每 5 秒自动同步最新短信</label>
+        </div>
+        <div id="statusInfo" class="font-medium text-slate-400">正在加载...</div>
+      </div>
+    </div>
+
+    <!-- SMS List Cards -->
+    <div id="smsContainer" class="space-y-4">
+      <!-- Loading Skeleton -->
+      <div class="bg-white rounded-2xl p-6 border border-slate-200/80 animate-pulse flex flex-col gap-3">
+        <div class="h-4 bg-slate-200 rounded w-1/4"></div>
+        <div class="h-10 bg-slate-100 rounded w-full"></div>
+        <div class="h-4 bg-slate-200 rounded w-1/2"></div>
+      </div>
+    </div>
+
+    <!-- Pagination -->
+    <div id="pagination" class="mt-6 flex items-center justify-between"></div>
+  </main>
+
+  <!-- Webhook URL Modal -->
+  <div id="webhookModal" class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-100 relative">
+      <button onclick="closeWebhookModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+          <i data-lucide="satellite" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h3 class="text-base font-bold text-slate-900">SmsForwarder 转发配置</h3>
+          <p class="text-xs text-slate-500">在手机端 SmsForwarder 中配置 Webhook 接口</p>
+        </div>
+      </div>
+      
+      <div class="space-y-3 text-sm">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">接口地址 (URL)</label>
+          <div class="flex rounded-xl border border-slate-200 overflow-hidden bg-slate-50">
+            <input type="text" id="webhookUrlInput" readonly class="px-3 py-2 text-xs font-mono text-slate-700 bg-transparent flex-1 focus:outline-none" value="">
+            <button onclick="copyWebhookUrl()" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition flex items-center gap-1">
+              <i data-lucide="copy" class="w-3.5 h-3.5"></i> 复制
+            </button>
+          </div>
+        </div>
+
+        <div class="bg-amber-50 rounded-xl p-3.5 text-xs text-amber-800 space-y-1.5 border border-amber-200/60">
+          <div class="font-semibold flex items-center gap-1">
+            <i data-lucide="info" class="w-3.5 h-3.5"></i> 配置提示
+          </div>
+          <p>1. 请求方式选择：<b>POST</b></p>
+          <p>2. 请求格式：<b>application/json</b> 或 <b>form-data</b> 均可</p>
+          <p>3. 如果手机和电脑在同一局域网，请将 IP 替换为您电脑的局域网 IP（例如 <code>192.168.x.x:8000</code>）</p>
+          <p>4. 若部署在公网云服务器，请直接填写云服务器公网 IP 或域名</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Token Manage Modal -->
+  <div id="tokenModal" class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-xl w-full p-6 shadow-xl border border-slate-100 relative">
+      <button onclick="closeTokenModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+          <i data-lucide="key-round" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h3 class="text-base font-bold text-slate-900">API 授权令牌 (Tokens)</h3>
+          <p class="text-xs text-slate-500">管理允许向本服务推送短信的授权 Token</p>
+        </div>
+      </div>
+
+      <!-- Add Token Form -->
+      <div class="flex gap-2 mb-4">
+        <input type="text" id="newTokenName" placeholder="设备备注 (如: 家里小米6)" class="w-1/3 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <input type="text" id="newTokenValue" placeholder="Token 字符串 (例如: my_secret_key)" class="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <button onclick="addNewToken()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition">
+          添加
+        </button>
+      </div>
+
+      <!-- Token List -->
+      <div class="border border-slate-100 rounded-xl overflow-hidden max-h-60 overflow-y-auto">
+        <table class="w-full text-left text-xs">
+          <thead class="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold">
+            <tr>
+              <th class="p-2.5">备注 / Token</th>
+              <th class="p-2.5">状态</th>
+              <th class="p-2.5">最后调用</th>
+              <th class="p-2.5 text-right">操作</th>
+            </tr>
+          </thead>
+          <tbody id="tokenTableBody" class="divide-y divide-slate-100">
+            <!-- Render tokens dynamically -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed bottom-5 right-5 z-50 bg-slate-900 text-white px-4 py-2.5 rounded-xl shadow-lg text-sm font-medium flex items-center gap-2 transform translate-y-16 opacity-0 transition duration-300">
+    <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i>
+    <span id="toastMsg">复制成功</span>
+  </div>
+
+  <!-- Application Logic -->
+  <script>
+    let currentPage = 1;
+    let debounceTimer = null;
+    let autoRefreshTimer = null;
+
+    document.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      loadDevices();
+      loadSms(1);
+      setupAutoRefresh();
+      updateWebhookUrl();
+    });
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      const toastMsg = document.getElementById('toastMsg');
+      toastMsg.innerText = msg;
+      toast.classList.remove('translate-y-16', 'opacity-0');
+      setTimeout(() => {
+        toast.classList.add('translate-y-16', 'opacity-0');
+      }, 2000);
+    }
+
+    function copyToClipboard(text, label = '验证码') {
+      navigator.clipboard.writeText(text).then(() => {
+        showToast(`${label} [${text}] 已复制到剪贴板！`);
+      }).catch(err => {
+        alert('复制失败，请手动复制: ' + text);
+      });
+    }
+
+    function debounceLoad() {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        loadSms(1);
+      }, 300);
+    }
+
+    async function loadDevices() {
+      try {
+        const res = await fetch('/api/sms/devices');
+        const data = await res.json();
+        const select = document.getElementById('filterDevice');
+        const current = select.value;
+        select.innerHTML = '<option value="">全部设备</option>' + data.map(d => `<option value="${d}" ${d === current ? 'selected':''}>${d}</option>`).join('');
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function loadSms(page = 1) {
+      currentPage = page;
+      const device = document.getElementById('filterDevice').value;
+      const phone = document.getElementById('filterPhone').value;
+      const query = document.getElementById('filterQuery').value;
+      
+      const refreshIcon = document.getElementById('refreshIcon');
+      if (refreshIcon) refreshIcon.classList.add('animate-spin');
+
+      try {
+        const url = `/api/sms/list?page=${page}&per_page=15&device=${encodeURIComponent(device)}&phone=${encodeURIComponent(phone)}&query=${encodeURIComponent(query)}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        renderSmsList(data);
+        renderPagination(data);
+        document.getElementById('statusInfo').innerText = `共 ${data.total} 条记录，第 ${data.page} / ${data.pages} 页`;
+      } catch (err) {
+        console.error(err);
+        document.getElementById('statusInfo').innerText = '加载数据失败';
+      } finally {
+        if (refreshIcon) refreshIcon.classList.remove('animate-spin');
+      }
+    }
+
+    function renderSmsList(data) {
+      const container = document.getElementById('smsContainer');
+      if (!data.items || data.items.length === 0) {
+        container.innerHTML = `
+          <div class="bg-white rounded-2xl p-12 text-center border border-slate-200/80">
+            <div class="w-12 h-12 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center mb-3">
+              <i data-lucide="inbox" class="w-6 h-6"></i>
+            </div>
+            <h3 class="text-base font-semibold text-slate-800 mb-1">暂无短信记录</h3>
+            <p class="text-xs text-slate-500">当您的手机通过 Webhook 发送短信时，将会实时展示在此处。</p>
+          </div>
+        `;
+        lucide.createIcons();
+        return;
+      }
+
+      container.innerHTML = data.items.map(item => {
+        const hasCode = item.code && item.code.trim().length > 0;
+        return `
+          <div class="bg-white rounded-2xl p-5 border border-slate-200/80 hover:border-blue-200 transition shadow-sm hover:shadow-md">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <div class="flex items-center gap-2">
+                <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-50 text-blue-700">
+                  <i data-lucide="phone-incoming" class="w-3.5 h-3.5"></i>
+                  ${item.phone || '未知号码'}
+                </span>
+                ${item.device ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-600"><i data-lucide="smartphone" class="w-3 h-3"></i>${item.device}</span>` : ''}
+              </div>
+              <span class="text-xs text-slate-400 font-mono flex items-center gap-1">
+                <i data-lucide="clock" class="w-3.5 h-3.5"></i>
+                ${item.received_at}
+              </span>
+            </div>
+
+            ${hasCode ? `
+              <div class="mb-3.5 p-3 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50/60 border border-blue-100/80 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-semibold text-blue-800">提取到的验证码:</span>
+                  <span class="text-xl font-bold font-mono tracking-wider text-blue-600 bg-white px-2.5 py-0.5 rounded-lg border border-blue-200/60 shadow-sm">${item.code}</span>
+                </div>
+                <button onclick="copyToClipboard('${item.code}', '验证码')" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition shadow-sm shadow-blue-500/20 active:scale-95">
+                  <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                  <span>一键复制</span>
+                </button>
+              </div>
+            ` : ''}
+
+            <div class="text-sm text-slate-700 leading-relaxed bg-slate-50/70 p-3.5 rounded-xl border border-slate-100">
+              ${formatContent(item.content)}
+            </div>
+          </div>
+        `;
+      }).join('');
+      
+      lucide.createIcons();
+    }
+
+    function formatContent(text) {
+      if (!text) return '';
+      // Escape HTML
+      let escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      // Auto link urls
+      const urlRegex = /(https?:\/\/[^\s]+)/g;
+      escaped = escaped.replace(urlRegex, url => `<a href="${url}" target="_blank" class="text-blue-600 underline font-medium hover:text-blue-800">${url}</a>`);
+      return escaped.replace(/\n/g, '<br>');
+    }
+
+    function renderPagination(data) {
+      const pag = document.getElementById('pagination');
+      if (data.pages <= 1) {
+        pag.innerHTML = '';
+        return;
+      }
+      
+      pag.innerHTML = `
+        <button onclick="loadSms(${data.page - 1})" ${data.page <= 1 ? 'disabled' : ''} class="px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition">
+          上一页
+        </button>
+        <span class="text-xs text-slate-500 font-medium">第 ${data.page} / ${data.pages} 页</span>
+        <button onclick="loadSms(${data.page + 1})" ${data.page >= data.pages ? 'disabled' : ''} class="px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition">
+          下一页
+        </button>
+      `;
+    }
+
+    function resetFilters() {
+      document.getElementById('filterDevice').value = '';
+      document.getElementById('filterPhone').value = '';
+      document.getElementById('filterQuery').value = '';
+      loadSms(1);
+    }
+
+    function setupAutoRefresh() {
+      setInterval(() => {
+        const checkbox = document.getElementById('autoRefresh');
+        if (checkbox && checkbox.checked) {
+          loadSms(currentPage);
+          loadDevices();
+        }
+      }, 5000);
+    }
+
+    async function confirmClearAll() {
+      if (!confirm('确定要清空所有短信接收记录吗？此操作无法撤销。')) return;
+      try {
+        const res = await fetch('/api/sms/clear', { method: 'DELETE' });
+        const data = await res.json();
+        if (data.success) {
+          showToast('短信记录已全部清空');
+          loadSms(1);
+          loadDevices();
+        }
+      } catch (e) {
+        alert('清空失败: ' + e);
+      }
+    }
+
+    // Modal controls
+    function openWebhookModal() {
+      document.getElementById('webhookModal').classList.remove('hidden');
+    }
+    function closeWebhookModal() {
+      document.getElementById('webhookModal').classList.add('hidden');
+    }
+    function updateWebhookUrl() {
+      const url = `${window.location.protocol}//${window.location.host}/api/sms/receive?token=default_secret_token`;
+      document.getElementById('webhookUrlInput').value = url;
+    }
+    function copyWebhookUrl() {
+      const input = document.getElementById('webhookUrlInput');
+      copyToClipboard(input.value, 'Webhook URL');
+    }
+
+    async function openTokenModal() {
+      document.getElementById('tokenModal').classList.remove('hidden');
+      loadTokens();
+    }
+    function closeTokenModal() {
+      document.getElementById('tokenModal').classList.add('hidden');
+    }
+
+    async function loadTokens() {
+      try {
+        const res = await fetch('/api/tokens');
+        const tokens = await res.json();
+        const tbody = document.getElementById('tokenTableBody');
+        tbody.innerHTML = tokens.map(t => `
+          <tr class="hover:bg-slate-50/50">
+            <td class="p-2.5">
+              <div class="font-semibold text-slate-800">${t.name || '未命名'}</div>
+              <div class="font-mono text-slate-400 text-[11px]">${t.token}</div>
+            </td>
+            <td class="p-2.5">
+              <span class="inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${t.is_enabled ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}">
+                ${t.is_enabled ? '启用' : '已停用'}
+              </span>
+            </td>
+            <td class="p-2.5 text-slate-400 text-[11px] font-mono">
+              ${t.last_used_at || '从未'}
+            </td>
+            <td class="p-2.5 text-right space-x-1">
+              <button onclick="toggleToken(${t.id})" class="text-blue-600 hover:text-blue-800 font-medium">
+                ${t.is_enabled ? '停用' : '启用'}
+              </button>
+              <button onclick="deleteToken(${t.id})" class="text-rose-600 hover:text-rose-800 font-medium">
+                删除
+              </button>
+            </td>
+          </tr>
+        `).join('');
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function addNewToken() {
+      const name = document.getElementById('newTokenName').value.trim();
+      const token = document.getElementById('newTokenValue').value.trim();
+      if (!token) return alert('请输入 Token 字符串');
+      
+      const res = await fetch('/api/tokens', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, token })
+      });
+      const data = await res.json();
+      if (data.success) {
+        document.getElementById('newTokenName').value = '';
+        document.getElementById('newTokenValue').value = '';
+        loadTokens();
+        showToast('Token 添加成功');
+      } else {
+        alert(data.error || '添加失败');
+      }
+    }
+
+    async function toggleToken(id) {
+      await fetch(`/api/tokens/${id}/toggle`, { method: 'POST' });
+      loadTokens();
+    }
+
+    async function deleteToken(id) {
+      if (!confirm('确定删除此 Token？')) return;
+      await fetch(`/api/tokens/${id}`, { method: 'DELETE' });
+      loadTokens();
+    }
+  </script>
+</body>
+</html>
